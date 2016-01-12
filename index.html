@@ -1,0 +1,158 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<html>
+  <head>
+    <title>Using the JNI (Java Native Interface) with NASM</title>
+    <style>
+      body {
+        font-family: verdana, helvetica, sans-serif;
+        font-size: 10pt;
+      }
+      code {
+        font-family: courier new, serif;
+        font-size: 10pt;
+      }
+      td {
+        font-family: verdana, helvetica, sans-serif;
+        font-size: 10pt;
+      }
+      h1 {
+        font-family: verdana, helvetica, sans-serif;
+        font-size: 18pt;
+      }
+      h2 {
+        font-family: verdana, helvetica, sans-serif;
+        font-size: 16pt;
+      }
+      h3 {
+        font-family: verdana, helvetica, sans-serif;
+        font-size: 13pt;
+      }
+    </style>
+    <meta name="keywords" content="Java, JNI, Java Native Interface, assembler, NASM, Netwide Assembler, Windows, Win32, source, C, DirectDraw, tutorial">
+  </head>
+
+  <body>
+
+    <h1>Using the JNI (Java Native Interface) with NASM</h1>
+
+    <a href="nasm_jni.zip">Download everything</a> to read offline (XXX kB).
+
+    <hr align="center" width="150" color="#000000">
+    <h2><i>Introduction</i></h2>
+    <p>
+      The <i>Java Native Interface</i> allows a Java application to call native code. That is, any code compiled or assembled to machine code located in a dynamically linked library (.dll or .so). This allows Java applications to take advantage of all benefits native code offers, such as using platform dependant features and extremely fast code. Applets are usually not allowed to do this because of security reasons.
+    </p>
+    <h3>Scope</h3>
+    <p>
+      This page will explain how to use JNI with the <a href = "http://nasm.2y.net/">NASM</a> assembler. It covers Intel's 32-bit Architecture (IA-32), Sun Microsystems' JVM and Microsoft Windows only.
+    </p>
+    <p>
+      It will not explain everything about the JNI. It is meant to be reasonably complete about the JNI <i>with regard to assembler under Windows</i>. Some topics are left as an exercise to the reader -- for example: using global references, working out method signatures containg Unicode characters for overloaded native methods, the Invocation API, and so on. Principles applied in C should also apply to assembler in these cases.
+    </p>
+    <h3>Prerequisities</h3>
+    <p>
+      It is assumed you have read the <i><b>Java Native Interface Specification</b></i> by <a href="http://java.sun.com/docs/">Sun Microsystems</a> and have basic knowledge of Java, C and assembler. More advanced experience is recommended (especially assembler). Having tried the JNI in a high level language already is also helpful.
+    </p>
+    <hr align="center" width="150" color="#000000">
+    <h2><i>Getting ready</i></h2>
+    <p>
+      The following tools are required (later versions will most likely work as well):
+      <ul>
+        <li><i>Java 2 SDK, Standard Edition</i>, version 1.3.1, <a href="http://java.sun.com/">Sun Microsystems</a></li>
+        <li><i>Netwide Assembler (NASM)</i>, version 0.98.08, <a href="http://nasm.2y.net">the NASM site</a></li>
+        <li><i>Microsoft Incremental Linker</i>, version 6.00.8447, <a href="http://www.microsoft.com/">Microsoft</a>
+          <blockquote>
+            For the examples on this site Microsoft's linker is used, but other linkers should work too. An exception to that are the linkers from Borland, which are just too downright buggy to be of any use with software other than Borland software.
+          </blockquote>
+        </li>
+      </ul>
+    </p>
+
+
+
+    <hr align="center" width="150" color="#000000">
+    <h2><i>First blood</i></h2>
+
+    <p>
+      Consider the following Java class:
+    <code><pre>
+<font color="blue">public class</font> JNITest1 <font color="red">{</font>
+    <font color="blue">static native int</font> inc<font color="red">(</font><font color="blue">int</font> i<font color="red">)</font>;
+
+    <font color="blue">public static void</font> main<font color="red">(</font><font color="navy">String</font><font color="red">[]</font> args<font color="red">) {</font>
+        <font color="green">/* Load the library containing the inc() function */</font>
+        <font color="navy">System</font>.loadLibrary<font color="red">(</font><font color="teal">"JNICode1"</font><font color="red">)</font>;
+
+        <font color="green">/* Call the native method */</font>
+        <font color="navy">System</font>.out.println<font color="red">(</font><font color="teal">""</font> + inc<font color="red">(</font>1<font color="red">))</font>;
+    <font color="red">}
+}</font></pre></code>
+    There are two things of interest here. The first is the modifier <code><font color="blue">native</font></code> to the <code>inc()</code> function. This means that this method will be implemented in native code. The second is the <code><font color="navy">System</font>.loadLibrary<font color="red">(</font><font color="teal">"JNICode1"</font><font color="red">)</font></code> statement. This instructs the JVM to load the dynamically linked library with the name <code>JNICode1.dll</code>. The symbols exported from this DLL will be added to the list the JVM will use to resolve methods with the <code><font color="blue">native</font></code> modifier.
+
+    <p>
+    We will implement the method <code>inc()</code> in native code. It has one <code>int</code> argument which will increased by one and returned; like the following Java method would do:
+
+    <code><pre>
+    <font color="blue">int</font> inc<font color="red">(</font><font color="blue">int</font> i<font color="red">) {</font>
+        <font color="blue">return</font> i + 1;
+    <font color="red">}</font>
+    </pre></code>
+    <h3>The native code</h3>
+    As you have read in the specification, we need to create a DLL which will export the symbol <code>Java_JNITest1_inc</code>. Because this native method is not overloaded, we do not need to specify the completely mangled symbol. This makes the code much more readable.
+    </p>
+    <p>
+    The assembler code required is fairly simple:
+    <code><pre>
+section .code
+;-------------------------------------------------------------------------------
+global          _DLLMain
+_DLLMain:
+                xor     eax, eax
+                inc     eax
+                ret     0ch
+;-------------------------------------------------------------------------------
+global          Java_JNITest1_inc
+Java_JNITest1_inc:
+                mov     eax, [esp+12]           ; get the value of the "i" argument
+                inc     eax                     ; return the result in eax
+                ret     3 * 4                   ; clean up 3 arguments from the stack
+    </pre></code>
+    <h3>Creating the DLL</h3>
+    This can be assembled with NASM using the following command line:
+    <br><br>
+    <code>nasmw -f win32 -w+orphan-labels JNICode1.asm</code>
+    <br><br>
+    The <code>-f win32</code> option tells NASM to generate a COFF object file which can be fed to a linker. With Microsoft's linker, we can create the DLL as follows:
+    <br><br>
+    <code>link /dll /export:Java_JNITest1_inc /align:4096 /entry:DLLMain JNICode1.obj</code>
+    <br><br>
+    The /export:Java_JNITest1_inc option specifies that that symbol should be exported from the DLL. When we have a lot of exported symbols we can use a lot of /export options, but there's a better way -- we'll come to that later.
+    <p>
+    The /entry:DLLMain option specifies the DLL entry point. This is called whenever a process attaches to the DLL or when a thread is created in a process that is using our DLL. We don't do anything special here besides returning 1 (TRUE in C) to indicate everything is OK. The linker will give a warning such as "JNICode1.dll : warning LNK4086: entrypoint "_DLLMain" is not __stdcall with 12 bytes of arguments; image may not run", but that is, besides false, nothing to worry about. We could also have linked with some libraries from Microsoft which apparently <i>do</i> have an appropriately mangled __stdcall DLL entry point with 12 bytes of arguments; then we would not get this warning but crappy code in our DLL instead.
+    <p>
+    There is also no reason to make the DLL bigger than needed, so we use the /align:4096 option. This spawnes another warning: "LINK : warning LNK4108: /ALIGN specified without /DRIVER or /VXD; image may not run" and again this is nothing to worry about - the DLL will run fine (with some kb's of zeroes less).
+    <h2>Arguments</h2>
+    Before any "normal" arguments (the "i" argument), first two other arguments are always passed. These are the JNI interface pointer and the class reference (static native method) or this reference (instance native method). Therefore we have in total three arguments to our method and use <code>ret 3 * 4</code> to return to the JVM after cleaning up the stack.
+    <h2>Calling convention</h2>
+    Under Windows, the __stdcall calling convention is used (this may differ between operating systems, but should be the same across Windows JVM's). This means that arguments are pushed right to left (i.e., the first argument is pushed last), we should preserve the ebx, edi, esi, ebp registers (and probably things as the direction flag as well), and clean up the stack for the arguments pushed by the caller.
+    <p>
+    In Sun's implementation however, it turns out we actually don't have to preserve the registers and clean up the stack correctly. As far as I can tell this is an implementation dependant feature and as such could change in a next release of the JVM. In the example code I'll not save all registers but will clean up the stack.
+    <p>
+
+
+
+
+    <hr align="center" width="150" color="#000000">
+    <address>
+      Copyright (c) 2002 <a href="mailto:matthijsln@xs4all.nl">Matthijs Laan</a><br>
+      Last modified:
+      <script type="text/javascript" language="JavaScript">
+      <!--
+        document.write(document.lastModified);
+      // -->
+      </script>
+
+      <p>
+    </address>
+  </body>
+</html>

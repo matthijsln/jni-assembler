@@ -1,0 +1,14 @@
+LIBRARY JNITest
+EXPORTS
+        Java_JNITest_add
+        Java_JNITest_callInstanceMethod
+        Java_JNITest_callStaticMethod
+        Java_JNITest_sumIntArray
+        Java_JNITest_reverseASCIIString
+        Java_JNITest_changeStaticField
+        Java_JNITest_changeInstanceField
+        Java_JNITest_pi
+        Java_JNITest_sqrt
+        Java_JNITest_haveCPUID
+        Java_JNITest_vendorID
+        Java_JNITest_brandString
